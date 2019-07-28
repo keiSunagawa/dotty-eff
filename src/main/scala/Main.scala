@@ -24,13 +24,33 @@ object Main {
     // println(lst)
 
     import delegate CoyonedaOps._
-    val prog2 =for {
-      s <- readC()
-      _ <- printC(s)
-      s2 <- readC()
-    } yield s2 + "world"
-    val res2 = handleC(prog2)
-    println(res2)
+    // val prog2 =for {
+    //   s <- readC()
+    //   _ <- printC(s)
+    //   s2 <- readC()
+    // } yield s2 + "world"
+    // val res2 = handleC(prog2)
+    // println(res2)
+
+    import Eff._
+    import Union._
+
+    inline def fx[G[_], A](fa: (Option || G)[A], g: Option[A] => G[A]): G[A] = {
+      fa match {
+        case l: Option[A] => g(l)
+        case r: G[A] => r
+      }
+    }
+
+    val z: (Option || ([X] =>> Either[String, X]))[Int] = Some(3)
+    println(fx(z, _.toRight("invalid")))
+    // val z4: Double = 2.0
+    // val z5: Double = f(z4, _.toDouble)
+
+    // val z3: String = "aa"
+    // val z2: String = f(z3, _.toString)
+
+    println(ConsoleEff.example)
   }
 }
 
@@ -55,15 +75,15 @@ enum Console[+A] {
 object ConsoleOps {
   import FreeOps._
 
-  given ConsoleFunctor as Functor[Console] {
-    import Console._
-    def map[A, B](m: Console[A], f: A => B): Console[B] = m match {
-      case Print(o, a) => Print(o, f(a))
-      case Read(nf) => Read(f compose nf)
-    }
-  }
-  def print(out: String): Free[Console, Unit] = impure[Console, Unit](Console.Print(out, ()))
-  def read(): Free[Console, String] = impure[Console, String](Console.Read(identity))
+  // given ConsoleFunctor as Functor[Console] {
+  //   import Console._
+  //   def map[A, B](m: Console[A], f: A => B): Console[B] = m match {
+  //     case Print(o, a) => Print(o, f(a))
+  //     case Read(nf) => Read(f compose nf)
+  //   }
+  // }
+  // def print(out: String): Free[Console, Unit] = impure[Console, Unit](Console.Print(out, ()))
+  // def read(): Free[Console, String] = impure[Console, String](Console.Read(identity))
 
   import CoyonedaOps._
   def printC(out: String): Free[CX[Console], Unit] = impureC[Console, Unit](Console.Print(out, ()))
@@ -83,6 +103,9 @@ object ConsoleOps {
 
   def handleC[A](fm: Free[CX[Console], A]): A = fm match {
     case Free.Pure(a) => a
+    // `type F[A] = Coyoneda[Console, A];  F[Console, Free[F, A]]` in Impure value
+    // f: Any => Free[F, A]
+    // fb: Console[Any]
     case Free.Impure(Coyoneda(f, fb)) => fb match {
       case Console.Print(o, a) =>
         println(o)
@@ -92,4 +115,16 @@ object ConsoleOps {
         handleC { f(fr(in)) }
     }
   }
+}
+
+object ConsoleEff {
+  import Union._
+  import EffOps._
+
+  def print(out: String): Eff[Console || Void, Unit] = impure(Console.Print(out, ()))
+
+  inline def example: Eff[Console || Void, Int] = for {
+    _ <- print("hello.")
+    _ <- print("world.")
+  } yield 0
 }
