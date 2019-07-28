@@ -35,22 +35,8 @@ object Main {
     import Eff._
     import Union._
 
-    inline def fx[G[_], A](fa: (Option || G)[A], g: Option[A] => G[A]): G[A] = {
-      fa match {
-        case l: Option[A] => g(l)
-        case r: G[A] => r
-      }
-    }
-
-    val z: (Option || ([X] =>> Either[String, X]))[Int] = Some(3)
-    println(fx(z, _.toRight("invalid")))
-    // val z4: Double = 2.0
-    // val z5: Double = f(z4, _.toDouble)
-
-    // val z3: String = "aa"
-    // val z2: String = f(z3, _.toString)
-
-    println(ConsoleEff.example)
+    val p = ConsoleEff.example
+    ConsoleEff.handle(p)
   }
 }
 
@@ -119,12 +105,28 @@ object ConsoleOps {
 
 object ConsoleEff {
   import Union._
+  import Eff._
   import EffOps._
+  import Member._
 
-  def print(out: String): Eff[Console || Void, Unit] = impure(Console.Print(out, ()))
+  def print[R[_]](out: String) given (mem: Member[Console, R]): Eff[R, Unit] = impure(Console.Print(out, ()))
+  def read[R[_]]() given (mem: Member[Console, R]): Eff[R, String] = impure(Console.Read(identity))
 
-  inline def example: Eff[Console || Void, Int] = for {
+  def handle[A, R[_]](fm: Eff[Console :+: R, A]): Eff[R, A] = fm match {
+    case Impure(Inl(Console.Print(out, n)), f) =>
+      println(out)
+      handle { f(n) }
+    case Impure(Inl(Console.Read(rf)), f) =>
+      val in = io.StdIn.readLine()
+      handle { f(rf(in)) }
+    case Impure(Inr(n), f) => handle { f(n) }
+    case Pure(a) => Pure(a)
+  }
+
+  def example: Eff[Console :+: Void, Int] = for {
     _ <- print("hello.")
-    _ <- print("world.")
+    _ <- print("who?")
+    s <- read()
+    _ <- print(s"Hi, $s")
   } yield 0
 }

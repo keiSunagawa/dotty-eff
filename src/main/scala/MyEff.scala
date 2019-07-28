@@ -46,35 +46,58 @@ object CoyonedaOps {
   def coyoneda[F[_], B](fb: F[B]): Coyoneda[F, B] = Coyoneda(a => a.asInstanceOf[B], fb.asInstanceOf[F[Any]])
 }
 
+sealed trait Union[F[_], G[_], A]
 object Union {
+  case class Inl[F[_], G[_], A](value: F[A]) extends Union[F, G, A]
+  case class Inr[F[_], G[_], A](value: G[A]) extends Union[F, G, A]
+  final abstract class Void[A]
 
-  type ||[F[_], G[_]] = [A] =>> F[A] | G[A]
-  trait Void[A]
+  type :+:[F[_], G[_]] = [A] =>> Union[F, G, A]
+}
+
+trait Member[F[_], G[_]] {
+  def inject[A](f: F[A]): G[A]
+}
+object Member {
+  import Union._
+  implicit def left[F[_], G[_]]: Member[F, F :+: G] =
+    new Member[F, F :+: G] {
+      def inject[A](fa: F[A]): (F :+: G)[A] = Inl(fa)
+    }
+
+  implicit def right[F[_], G[_], H[_]](implicit member: Member[F, H]): Member[F, G :+: H] =
+    new Member[F, G :+: H] {
+      def inject[A](fa: F[A]): (G :+: H)[A] = Inr(member.inject(fa))
+    }
 }
 
 sealed trait Eff[R[_], A]
 
 object Eff {
   case class Pure[R[_], A](v: A) extends Eff[R, A]
-  case class Impure[R[_], A](fz: R[Any], f: R[Any] => Eff[R, A]) extends Eff[R, A]
+  case class Impure[R[_], A](fz: R[Any], f: Any => Eff[R, A]) extends Eff[R, A]
 
   def map[F[_], A, B](m: Eff[F, A], f: A => B): Eff[F, B] = m match {
     case Pure(v) => Pure(f(v))
     case Impure(fz, fo) => Impure(fz, a => map(fo(a), f))
   }
   import Union._
-  inline def flatMap[F[_], G[_], A, B](m: Eff[F, A], f: A => Eff[F || G, B]): Eff[F || G, B] = m match {
+  def flatMap[F[_], A, B](m: Eff[F, A], f: A => Eff[F, B]): Eff[F, B] = m match {
     case Pure(v) => f(v)
     case Impure(fz, fo) =>
-      Impure[F || G, B](fz, a => flatMap(fo(a.asInstanceOf[F[Any]]), f.asInstanceOf[Nothing]))
+      Impure(fz, a => {
+        val n = fo(a)
+        flatMap(n, f)
+      })
   }
 }
 
 object EffOps {
   import Union._
   def pure[F[_], A](a: A): Eff[F, A] = Eff.Pure(a)
-  def impure[F[_], A](fa: F[A]): Eff[F, A] = Eff.Impure(fa.asInstanceOf[F[Any]], a => pure(a.asInstanceOf[A]))
+  def impure[F[_], R[_], A](fa: F[A]) given (m: Member[F, R]): Eff[R, A] = Eff.Impure(m.inject(fa.asInstanceOf[F[Any]]), a => pure(a.asInstanceOf[A]))
 
+  import Union._
   def (fm: Eff[F, A]) map[F[_], A, B] (f: A => B): Eff[F, B] = Eff.map(fm, f)
-  inline def (fm: Eff[F, A]) flatMap[F[_], G[_], A, B] (f: A => Eff[F || G, B]): Eff[F || G, B] = Eff.flatMap(fm, f.asInstanceOf[Nothing])
+  def (fm: Eff[F, A]) flatMap[F[_], A, B] (f: A => Eff[F, B]): Eff[F, B] = Eff.flatMap(fm, f)
 }
