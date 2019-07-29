@@ -1,5 +1,29 @@
 object Main {
   def main(args: Array[String]): Unit = {
+    RPCMonadTest.run()
+  }
+}
+
+object RPCMonadTest {
+  def run(): Unit = {
+    import RPCMonad._
+    import RPCMonadOps._
+    import Union._
+    import Member._
+
+    val prog: RPCMonad[ServiceA :+: (ServiceB :+: Void), Int] = for {
+      res <- ServiceA.callFunctionA[ServiceA :+: (ServiceB :+: Void)]("hello")
+      res2 <- ServiceB.callFunctionA[ServiceA :+: (ServiceB :+: Void)](3)
+    } yield res
+
+    val r = ServiceB.handle {
+      ServiceA.handle(prog)(new ServiceA.Conf)
+    }
+    println(r)
+  }
+}
+object EffTest {
+  def run(): Unit = {
     import FreeOps._
     import delegate OptionOps._
     import OptionOps._
@@ -119,7 +143,7 @@ object ConsoleEff {
     case Impure(Inl(Console.Read(rf)), f) =>
       val in = io.StdIn.readLine()
       handle { f(rf(in)) }
-    case Impure(Inr(n), f) => handle { f(n) }
+    case Impure(Inr(n), f) => Impure(n, a => handle { f(a) })
     case Pure(a) => Pure(a)
   }
 
